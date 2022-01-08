@@ -1,7 +1,7 @@
 주석 Comment  = //
 여러 줄 주석 Multiline Comment = /*  */
 
-**C++ Build**
+**C++ Build**<br>
 PreProcess 전처리 - 소스코드에 담긴 메타 정보 처리
 Compile 컴파일 - 기계 처리가 가능한 Object 목적파일로 변환
 Link 링크 - 여러 오브젝트 파일을 애플리케이션으로 엮기
@@ -10,13 +10,14 @@ Link 링크 - 여러 오브젝트 파일을 애플리케이션으로 엮기
 구현은 Source파일에
 
 **전처리 지시자**
+```c++
 #include - 해당 파일의 내용을 그 위치에 삽입 ( 치환 )
 #define X Y - X를 Y로 치환
 #ifdef X  - X가 define 되어 있다면
 #ifndef X - 반대라면
 #endif - if의 끝
 #pragma - 컴파일러마다 다른 지시자
-
+```
 **Header Guard**
 ![image](https://user-images.githubusercontent.com/85000118/136638784-15e88311-29fc-4ac2-9c0c-499d94189ac4.png)
 컴파일러가 지원한다면 #pragma once 로 간결하게 사용
