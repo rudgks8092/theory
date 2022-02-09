@@ -27,3 +27,32 @@ GUI는 콘솔 잘 사용 안하여 스트림 사용하지 않을 수 있음
 
 스트림은 현재 위치정보를 담고 있음 (읽기나 쓰기를 수행할 위치)  
 
+
+
+
+
+스트림의 개념  
+데이터의 입력 or 출력 모두 적용 가능 ex. 네트워크 클래스, MIDI장치 접근 등  
+File Stream, String Stream 등 ( C에서 fprintf, fscanf, sprintf 등 )  
+
+
+### 출력 Stream 기초
+<osstream> 헤더 (iostream헤더에는 입출력 모두 정의되어 있음).  
+
+**cout = CPP 기본 built-in 내장 스트림으로 콘솔(표준출력)에 값을 씀**  
+  ```c++
+  // cout 기본 사용법
+  int i = 7;
+  cout << "Value i = " << i << endl;
+  // 위 코드는 아래와 동일
+  cout << "Value i = " << i << "\n";
+  cout.flush()
+  ```
+  
+  std::endl은 많으면 버퍼 비우는 연산을 자주 성능이 떨어질 수 있음
+  
+  
+ ### 출력 Stream 제공 메서드
+  
+
+  
