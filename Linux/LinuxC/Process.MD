@@ -1,5 +1,10 @@
 ### LinuxC Process 관련 API
 
+**관련 코드**
+1. [Fork-Exec](https://github.com/rudgks8092/Dev/tree/main/C_CPP/Linux/Process/Fork-Exec)  
+
+
+---
 1. fork
 **fork = 자식 Process를 낳는?? 함수**  
 ```c++
@@ -116,5 +121,49 @@ posix_spawn, posix_spawnp 함수가 있음
 1. 인자 1 : pid
 2. 인자 2 : 자식 프로세스 실행 파일 경로 (절대, 상대, 파일명)
 3. 인자 3 : 열거나 닫을 파일 정보 구조체 ( 기본적으로는 모두 상속 받음 ) = posix_spawn_file_actions_t 조작 함수들 존재
-4. 인자 4: 
-5. 인자 5: argv 실행 인수 목록
+4. 인자 4 : EUID, 프로세스 그룹, 기본 시그널 작동, 시그널 블록 마스크, 스케줄링 파라미터, 스케줄러 등의 설정 구조체 (각각 조작 메서드가 존재)
+5. 인자 5  argv 실행 인수 목록  
+
+
+각 인자의 처리 함수는 검색해서 찾아보자  
+
+
+```c++
+// 구조체 인자 
+int ret_err = 0;
+pid_t pid_child;
+char buf_err[64];
+// 파일 액션 구조체 - spawn.h
+posix_spawn_file_actions_t posix_faction;
+char *argv_child[] = { "forkexec_child", NULL };
+printf("P %d Start", getpid());
+// 파일 액션 구조체 초기화
+if ((ret_err = posix_spawn_file_actions_init(&posix_faction)) != 0) {
+  strerror_r(ret_err, buf_err, sizeof(buf_err));
+  fprintf(stderr, "FAIL : file_actions_init: %s\n", buf_err);
+  exit(EXIT_FAILURE);
+}
+// 추가로 오픈할 파일
+if ((ret_err = posix_spawn_file_actions_addopen(&posix_faction,
+  3, "psawn.log", O_WRONLY | O_CREAT | O_APPEND, 0664)) != 0) {
+  strerror_r(ret_err, buf_err, sizeof(buf_err));
+  fprintf(stderr, "FAIL : file_actions_addopen: %s\n", buf_err);
+  exit(EXIT_FAILURE);
+}
+
+ret_err = posix_spawn(&pid_child, argv_child[0],
+  &posix_faction,
+  NULL,
+  argv_child,
+  NULL);
+// 파일 액션 구조체 해제
+if ((ret_err = posix_spawn_file_actions_destroy(&posix_faction)) != 0) {
+  strerror_r(ret_err, buf_err, sizeof(buf_err));
+  fprintf(stderr, "FAIL : file_actions_destroy: %s\n", buf_err);
+  exit(EXIT_FAILURE);
+}
+printf("Parent[%d] : Wait for Child(%d)\n", getpid(), (int)pid_child);
+// 자식 프로세스 종료 대기
+wait();
+printf("Parent[%d] : Exit\n", getpid());
+```
