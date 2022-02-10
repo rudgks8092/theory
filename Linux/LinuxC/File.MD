@@ -133,3 +133,94 @@ setvbuf(stdout, (char*)NULL, _IOFBF, 0);
 **정적 캐스팅으로 구조체 등을 받아오면, 시스템에 따른 패딩, 정렬 문제 등이 발생될 수 있음**  
 이를 해결 하기 위해 mmap, 소켓 전송에는 XDR규약을 지키는 것이 좋음 (추후 설명)  
 
+---
+```c++
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <spawn.h>
+#include <sys/wait.h>
+char file_log[64];
+void cat_logfile();
+
+int main(int argc, char *argv[])
+{
+	int 	fd0, fd1;
+	FILE	*fp0;
+	char	buf[64];
+	snprintf(file_log, sizeof(file_log), "%s.log", argv[0]);
+	if ((fd0 = open(file_log, O_CREAT | O_TRUNC | O_RDWR, 0644)) == -1) {
+		/* error */
+	}
+	write(fd0, "1234567890abcdefghij", 20);
+	cat_logfile();	/* print current file */
+
+
+	// 복제
+	if ((fd1 = dup(fd0)) == -1) {
+		/* error */
+	}
+	write(fd1, "OPQRSTU", 7);
+	cat_logfile();
+
+
+	// 복제 open - 고수준
+	if ((fp0 = fdopen(fd1, "a+")) == NULL) {
+		/* error */
+	}
+	printf("\tfd0(%d) fd1(%d)\n", fd0, fd1);
+
+	// fd1 오프셋 변경 후, write
+	lseek(fd1, 2, SEEK_SET);
+	write(fd1, ",fd1,", 5);
+	cat_logfile();
+
+	// fd0에 write
+	write(fd0, ",fd0,", 5);
+	cat_logfile();
+
+	// fp0으로 READ
+	int x = fread(buf, 5, 1, fp0);
+	printf("\tread buf=\"%.5s\"(%d)\n", buf, x);
+	fwrite("(^o^)", 5, 1, fp0); fflush(fp0);
+	cat_logfile();
+	fclose(fp0);
+	close(fd1);
+	close(fd0);
+	return 0;
+}
+
+void cat_logfile()
+{
+	static int cnt;
+	char    *argv_child[] = { "cat", file_log, NULL };
+	printf("%d={", cnt++);
+	fflush(stdout);
+	posix_spawnp(NULL, argv_child[0], NULL, NULL, argv_child, NULL);
+	wait(NULL);
+	printf("}\n");
+	fflush(stdout);
+}
+```
+
+위 코드는 3개의 FD가 동일한 파일을 바라보는데, 이를 채널을 공유한다하고 Linked Channels라 부른다.  
+lseek로 한개의 fd의 오프셋을 변경하여도, 다른 fd들도 채널을 공유하기 때문에 동일하게 변경된다.  
+
+**fdopen(fd1,"a+")로 append 모드로 열면, 추가모드로 동작하여 항상 파일의 끝을 보게 된다. (다른 fd 포함)**  
+
+파일을 새로 열면 Independent Channels로 열림  
+=> 각각 버퍼가 따로 존재, 채널 생성으로 메모리 오버헤드 발생 가능성 있음  
+
+
+**결론으로는 독립된 채널이여도 입출력 순서에 대한 결정은 운영체제에 있다.**  
+**따라서, 여러 채널의 사용은 지양해야 한다.**  
+=> 성능과 신뢰성을 위해서는 직렬화하는 것이 가장 좋다고 한다.  
+
+
+**Tip. fflush(stdin)**  
+입력 버퍼를 비울 때, 관습적으로 위의 함수형태로 호출하는데 표준이 아니기 때문에 플랫폼에 따라 다를 수 있으므로 지양하자.  
+
