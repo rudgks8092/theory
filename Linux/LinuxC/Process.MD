@@ -106,7 +106,7 @@ Child에서 fd 3으로 dprintf를 하였을 때, FD_CLOEXEC가 없다면 열리�
 posix_spawn, posix_spawnp 함수가 있음
 
 반환 값은 전통적인 유닉스 시스템 함수로	
-성공 = 0	  
+성공 = 0  
 실패 = -1		  
 실패의 경우, 전역 변수 **errno**를 읽어서 대처하였음  
 그러나, 쓰레드가 전역변수 errno를 사용하며 문제가 생겼었음 (pthread는 쓰레드 별로 구분하여 큰 문제X)   
