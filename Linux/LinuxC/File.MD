@@ -102,3 +102,34 @@ Process의 fork-exec에서 FD_CLOEXEC를 fnctl로 처리하지 않고, open에�
 따라서, **응답성과 성능을 중시하면 저수준 위주로 하는게 좋음**  
 
 
+**FILE 구조체**  
+C언어에서 파일 처리를 위한 구조체  
+이를 통해 얻어지는 파일 입출력 매개물 = 파일 스트림(가상화된 흐름을 표현하는 장치)   
+연속된 공간에서의 가상 데이터 흐름  
+
+```c++
+FILE *fp;
+if( (fp = fopen("streamfile.txt", "w")) == NULL){
+	// ERROR 처리
+}
+// 파일 닫기
+fclose(fp); 
+```
+
+고수준 파일 처리의 특징 버퍼링은 기본적으로 완전 버퍼링(Fully Buffered, Block buffering)이다.  
+```c++
+//라인 버퍼링 지정
+setvbuf(stdout, (char*)NULL, _IOLBF, 0);
+// => 개행문자를 발견하면 버퍼를 자동으로 비움 = fflush 실행
+
+// 기본 값 완전 버퍼링
+setvbuf(stdout, (char*)NULL, _IOFBF, 0);
+```
+**fflush로 강제로 비워야 할 경우**  
+= fork나 exec 계열의 함수를 사용할 경우(데이터 순서 역전이나 파괴 가능성)  
+
+
+고수준 파일 처리에서 바이너리는 fread, fwrite로 처리  
+**정적 캐스팅으로 구조체 등을 받아오면, 시스템에 따른 패딩, 정렬 문제 등이 발생될 수 있음**  
+이를 해결 하기 위해 mmap, 소켓 전송에는 XDR규약을 지키는 것이 좋음 (추후 설명)  
+
