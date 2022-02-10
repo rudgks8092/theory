@@ -94,3 +94,9 @@ dprintf(STDOUT_FILENO, "CHILD EXIT\n", getpid());
 Child에서 fd 3으로 dprintf를 하였을 때, FD_CLOEXEC가 없다면 열리지 않음   
 파일 복제 오버헤드를 피하려면 FD_CLOEXEC를 쓰면 되지만 **posix_spawn**을 사용하는게 더 좋음   
 
+
+**system 함수는 셸을 시켜 명령어 실행 (fork-exec의 간단 구현 버전)**	  
+중요 차이   
+1. 실행 중 부모프로세스 정지
+2. 자식 프로세스의 시그널 SIGCHLD, SIGINT, SIGQUIT가 무시됨
+
