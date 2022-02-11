@@ -333,6 +333,33 @@ offsetof(구조체,변수명)와 sizeof(구조체)로 패딩 규칙을 파악할
 
 
 LFS 사용 조건  
-- 파일 시스템의 LFS 지원 여부
-- 라이브러리(glibc)의 LFS 지원 여부
+- 파일 시스템의 LFS 지원 여부  
+=> 리눅스 ext3, ext4가 LFS를 지원함
+- 라이브러리(glibc)의 LFS 지원 여부  
+=> glibc 2.1.3 이상은 지원하는데, 해당 버전이 1999년에 릴리즈 되어 대부분은 적합함  
+
+
+32bit의 LFS 사용은 2가지 방식이 있음  
+**32bit와 64bit 관련 함수를 따로 사용하기**  
+open, open64, read, read64 처럼 offset의 한계가 지정된 함수들이 있어, 적합한 함수를 사용하면 된다.  
+
+이 방식은 2개의 매크로를 정의 해야함(컴파일러 or define)  
+```c++
+// gcc -DLARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
+#define _LARGEFILE_SOURCE // ftello, fseeko 함수 사용 가능해짐
+#define _LARGEFILE64_SOURCE // 64bit 버전의 함수의 사용 및 open의 대용량 파일 플래그 O_LARGEFILE 사용 가능해짐
+```
+
+**32bit 함수를 모두 64bit로 변환**  
+가장 간단하게 open, read 등의 함수를 수정 없이 컴파일 단계에서 64bit 버전으로 변환함  
+=> open을 사용해도 _FILE_OFFSET_BITS=64로 자동 확장, offset_t는 off64_t로 변환  
+
+```c++
+#define _LARGEFILE_SOURCE
+#define _FILE_OFFSET_BITS 64 // 32bit 기준 파일 관련 함수 변수 타입이 64bit로 변경
+// gcc -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 ...
+```
+
+**2번째의 변환이 가장 좋지만, 상황에 따라 32bit를 사용할 때는 1번째를 활용해야 한다.**
+
 
