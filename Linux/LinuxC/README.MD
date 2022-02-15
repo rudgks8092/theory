@@ -7,6 +7,6 @@ Thread Safe = 여러 스레드들이 데이터에 접근, 수정할 때 별도�
 1. [Process](https://github.com/rudgks8092/theory/blob/main/Linux/LinuxC/Process.MD)
 2. [File](https://github.com/rudgks8092/theory/blob/main/Linux/LinuxC/File.MD)
 3. [Text](https://github.com/rudgks8092/theory/blob/main/Linux/LinuxC/TEXT.MD)
-4. [Memory](https://github.com/rudgks8092/theory/blob/main/Linux/LinuxC/MEMORY.MD)
-5. 
+4. [Memory](https://github.com/rudgks8092/theory/blob/main/Linux/LinuxC/Memory.MD)
+5. [IPC](https://github.com/rudgks8092/theory/blob/main/Linux/LinuxC/IPC.MD)
 
