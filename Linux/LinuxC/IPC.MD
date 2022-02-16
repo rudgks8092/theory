@@ -94,3 +94,179 @@ LOSE : 상대적 무거움(여러가지를 지원하게 됨으로써 비대해�
 => But, 읽기 전용으로 열린 파일에서 읽은 내용 = 페이지 아웃 불필요  
 => 이미 디스크에 존재하고 있기 때문(필요할 때 다시 메모리 로드)  
 
+읽기 전용 = 실행 파일, 동적 라이브러리 로딩(strace 확인)  
+
+위의 ls는 mmap으로 중간중간 읽기 전용 설정 파일을 맵핑하고 있다.  
+이렇게 작성된 mmap은 모든 사용자가 공유하여 효과적으로 사용 가능  
+또한, 포인터 변수에 맵핑되어 lseek없이 바로 원하는 주소를 읽을 수 있음  
+
+
+mmap을 이용하여 파일에 쓸 경우, 동기화 작업이 진행되어 원하는 상황이 되지 않을 수 있음  
+
+mmap은 위처럼 **읽기 전용**에 특화되어 있지만,  
+쓰기의 장점도 존재한다.  
+1. write + 파일 보다 더 빠르고 일관성 유지하기 쉬움
+2. 시스템 콜 없이 커널이 자동 동기화 시도
+3. IPC용으로 활용이 가능
+4. 하드웨어 장치와 매칭한 경우, 하드웨어 메모리 접근에 용이  
+
+### 추가 특징
+**Lock 매커니즘이 필수**  
+**대응된 메모리 맵의 크기를 넘어서는 경우, 파일에 영향주지 않음**
+
+---
+**mmap 수행 방식**  
+
+먼저 파일을 열어 맵핑시켜야하는데, 대응시킬 메모리보다 커야함  
+=> 작을경우, ftruncate를 이용해서 키워야 함
+
+
+1. 공유(shared) 방식 = 지속 동기화
+2. 사설(private) 방식 = 최초 동기화
+
+공유 방식은 커널에서 지속적으로 동기화하여 모든 프로세스가 동일한 내용을 보도록 한다.  
+사설 방식은 mmap이 생성된 뒤에 프로세스가 독자적으로 사용하는 메모리 공간으로 전용될 수 있음  
+=> 사설 방식은 프로세스 고유 메모리 공간으로 전환되어 스왑 아웃 가능한 페이지가 됨  
+=> 메모리 낭비 or 성능상의 이점 사라질 수 있음
+
+**사설mmap에서는 스왑 금지를 mlock으로 해야함**  
+메모리조언(posix_mdvise)를 이용하는 방법도 있음(뒤에 작성)  
+
+
+mmap = thread-safe (내부 lock mechanism)  
+=> 공유받은 mmap이 최종 쓰여진 것이란 보장은 없기에 msync로 동기화 후, 읽어야 함  
+
+사용한 mmap은 munmap으로 해제해야 하는데, 다른 프로세스 사용여부 체크와 msync 이후에 하는 것이 좋다.  
+
+
+```c++
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[])
+{
+	int		fd, sz_page;
+	char	*p_map;
+	struct stat	stat_buf;
+
+	if (argc != 2) {
+		printf("Usage : %s <mmap file>\n", argv[0]);
+		return EXIT_FAILURE;
+	}
+	printf("System Page Size = %d\n", (sz_page = sysconf(_SC_PAGESIZE)));
+
+    // 메모리 대응 파일 열기
+	fd = open(argv[1], O_RDWR|O_CREAT, 0664);
+	if (fd == -1) {
+		printf("Fail: open(): (%d:%s)\n", errno, strerror(errno));
+		return EXIT_FAILURE;
+	}
+
+	if (fstat(fd, &stat_buf) == -1) {
+		printf("Fail: fstat(): (%d:%s)\n", errno, strerror(errno));
+		return EXIT_FAILURE;
+	}
+    // 적합하게 사이즈 늘리기
+	if (stat_buf.st_size < sz_page) {
+		ftruncate(fd, sz_page);
+	}
+
+    // mmap 수행
+    // 1번째 : 리턴 받기 원하는 주소 시작 번지(0이면 auto)
+    // 고정주소를 원하면 MAP_FIXED 플래그를 주고 페이지 크기의 경계(배수)를 입력
+    // MAP_SHARED, MAP_PRIVATE 는 동시 사용 불가
+    // 기타 여러가지 있으므로 검색 필요
+	p_map = mmap((void *)0, 64, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    // mmap 실패
+	if (p_map == MAP_FAILED) {
+		printf("Fail: mmap(): (%d:%s)\n", errno, strerror(errno));
+		return EXIT_FAILURE;
+	}
+	sprintf(p_map, "%s %p", "Testing synchronized mmap.\n", p_map);
+
+	/* synchronizing mmap. */
+	printf(">> Synchronizing Memory Mapped File.\n");
+	if (msync(p_map, 64, MS_SYNC) == -1) {
+		printf("Fail: msync(): (%d:%s)\n", errno, strerror(errno));
+		return EXIT_FAILURE;
+	}
+
+	printf(">> Unmapping Memory Mapped File.\n");
+	if (munmap(p_map, 64) == -1) {
+		printf("Fail: munmap(): (%d:%s)\n", errno, strerror(errno));
+		return EXIT_FAILURE;
+	}
+	if (fsync(3) == -1) {
+		printf("Fail: fsync(): (%d:%s)\n", errno, strerror(errno));
+		return EXIT_FAILURE;
+	}
+	printf(">> Closing file.\n");
+	close(fd);
+
+	return EXIT_SUCCESS;
+}
+
+```
+
+#### MMAP 종류
+1. MAP_SHARED  = 공유
+2. MAP_PRIVATE  = 사설(보통 읽기전용에 사용)
+3. MAP_FIXED  = 고정 시작 번지 지정
+4. MAP_ANONYMOUS  = 장치와 연결되지 않는 임시 mmap
+5. MAP_HUGETLB  = 대용량 처리
+6. MAP_LOCKED  = 페이지 락 이용(mlock)
+7. MAP_UNINITIALIZED  = mmap으로 할당된 공간 초기화 X(성능 중시)
+
+
+msync는 mmap에 자주 활용되는 함수로 비동기, 동기 등의 설정이 가능하다.  
+
+munmap의 행위는 연결을 끊는 행위  
+=> 다른 프로세스가 사용하지 않을때 시스템이 mmap을 제거함  
+
+
+---
+### 메모리 사용 패턴 조언(memory advise)
+mmap이나 shared memory는 메모리를 어떻게 다룰지에 대한 힌트 명시가 가능하다
+
+posix_madvise, madvise, posix_fadvise ...
+
+
+**실행 파일의 로딩 과정은 mmap을 통해서 한다(앞의 ls)**  
+=> 실행파일이 다른 파일을 읽는 경우는??  
+
+mmap으로 할 수 있으나, 프로그래머의 의도에 따라서 읽는 위치가 다를 수 있다.  
+=>처음? 끝? 중간? 운영체제의 캐싱을 위한 힌트를 위해 사용하게 된다.  
+
+--- 
+madvise는 BSD에서 도입된 함수로 대부분의 리눅스 유닉스에서 지원  
+
+POSIX 표준화를 통해 posix_madvise로 제공  
+
+이 또한 SYSV 시스템의 기능들처럼 기능면에서는 madvise가 좋다.  
+하지만 호환성에서는 표준함수인 posix_madvise가 좋다.  
+( 산업용 임베디드나 구형 시스템에서는 함수가 아무일도 안하는 경우가 있음 )  
+
+
+```c++
+int posix_madvise(void *addr, size_t len, int advice);
+```
+주소의 시작부터 len만큼의 공간에 적용  
+
+- POSIX_MADV_NOMAL = 기본 값
+- POSIX_MADV_SEQUENTIAL = 순차 접근(순서대로 Prefetching - 대용량 적합)
+- POSIX_MADV_RANDOM = 랜덤 접근
+- POSIX_MADV_WILLNEED = 빠른 시간 내 사용(되도록 메모리에 상주하도록)
+- POSIX_MADV_DONTNEED = 사용안함
+
+ posix_fadvise는 파일에 조언 적용
+
+
+ ---
+ ## SysV, Posix IPC
+ 
