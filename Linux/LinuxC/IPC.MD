@@ -270,3 +270,23 @@ int posix_madvise(void *addr, size_t len, int advice);
  ---
  ## SysV, Posix IPC
  
+ ### XSI IPC 형식의 특징
+
+ 구식이지만, 활발하게 쓰임 ( 유닉스 파생된 모든 운영체제가 지원하기 때문 )  
+
+함수 외 명령어로 (ipcs, ipcrm) 확인 및 제거 기능도 지원한다.  
+
+- IPC key
+- IPC ID (고정이 아님 - IPC key를 통해 획득 = 파일기술자와 비슷)
+- 소유권자
+- 소유권한(mode)
+
+**위 속성을 모든 XSI IPC가 가지고 있다**  
+IPC_PRIVATE로 사설 IPC도 있음 - IPC ID를 알아야지만 접근 가능함(key가 무의미한 값)  
+
+![image](https://user-images.githubusercontent.com/85000118/154230666-1aca3131-897e-4862-869b-aaffd3251cb6.png)
+
+**IPC 사용 과정**
+
+
+
