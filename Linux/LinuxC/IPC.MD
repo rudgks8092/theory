@@ -288,5 +288,226 @@ IPC_PRIVATE로 사설 IPC도 있음 - IPC ID를 알아야지만 접근 가능함
 
 **IPC 사용 과정**
 
+msgget을 통하여 입력된 값(key)를 토대로 만들 수 있지만,  
+ftok를 이용하여 파일경로를 토큰형태로(Hash) 만들 수도 있다.  
 
+**Key는 Unique하게 만드는 것을 권장**
+
+IPC_PRIVATE를 설정하면 랜덤한 값이 생성된다.  
+=> 생성된 ID는 접근 권한(mode)에 문제가 없다면 다른 프로세스도 접근이 가능하다.  
+
+
+```c++
+// 파일경로와 101을 조합한 IPC Key 계산
+key_shm = ftok("usr/local/bin/ipc_daemon",101);
+int id_shm = shmget(key_shm, size_shm, flag_shm);
+
+// IPC_PRIVATE
+int id_shm = shmget(IPC_PRIVATE,size_shm, flag_shm);
+
+// id_shm만 알고있다면 다시 shmget하지 않고, 접근이 가능하다(unique 기술자)
+```
+
+ipcs, ipcrm 명령어를 통해 생성된 IPC의 확인과 삭제가 가능하다.  
+ipcs의 결과에 Key가 0x00000000이면, IPC_PRIVATE로 만들어져있는 경우이다.  
+
+ipcrm으로도 삭제할 수 있고, 함수로 프로그램 내에서 각 ctl 함수를 사용하면 삭제가 가능하다.  
+
+POSIX IPC는 ipcs같은 관리툴이 별도로 없다.  
+그러한 단점들로 기존에는 덜 쓰였지만, pthread등 POSIX 인터페이스와 포팅하기에 좋아, 신규 프로젝트들에서 사용할 경우 POSIX를 쓰는것이 좋다.  
+
+리얼타임 확장  라이브러리 librt(POSIX API)  
+쓰레드 관련 라이브러리 pthread  
+POSIX IPC는 리얼 타임의 확장 기능 컴파일에서 -lrt, -lpthread 처럼 링킹해줘야 함  
+
+
+---
+## 공유 메모리(shared memory)
+**함수 콜 없이 주소 번지의 포인터 변수로 직접 접근하여 가장 빠른 성능을 갖는 IPC 메커니즘**  
+
+코드 단계에서 배타적 접근을 보장해야 함  
+=> Semaphore, MUTEX, rwlock, spinlock 등을 활용한 Lock 메커니즘  
+
+POSIX는 정수형 기술자(descriptor)를 사용하는 형태  
+=> 내부적으로는 별도의 식별자로 처리됨  
+=> 식별자를 사용하는 코드는 대체로 비슷하여 쉽게 사용(소켓, 파이프 등)  
+
+---
+## XSI 공유 메모리
+System V 의 공유 메모리 Key를 통한 접근방식 사용
+
+- shmget = IPC ID 얻기 ( 없으면 생성 가능 )
+- shmat = IPC ID를 통한 연결 (메모리 연결 주소 반환)
+- shmdt = 연결 해제 - detach
+- shmctl = 공유 메모리 조작 ( 제거, 메타 데이터 얻기 )
+
+**사용중인 메모리를 삭제하려하면, 삭제 예약상태가 되어 detach되면 삭제됨**  
+=> 삭제 예약은 리눅스의 기능, 유닉스는 안될 수 있음  
+
+
+```c++
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+int sysv_shmget(void **ret, char *tok, key_t shm_fixkey, int size, int user_mode);
+int sysv_shmrm(int shm_id);
+
+/* Name : shm_init
+ * Desc : init shared memory
+ * Argv : tok(path), shm_fixkey(key), int size(byte), user_mode(octal notation)
+ * Ret  : shm ID (if success), -1 (if fail)
+ *        ret (return address)
+ */
+int sysv_shmget(void **ret, char *tok, key_t shm_fixkey, int size, int user_mode)
+{
+	key_t	shm_key;
+	int		shm_id;
+	char 	buf_err[128];
+
+	if (ret == NULL || size < 0) { /* error */
+		return -1;
+	}
+
+	if (tok != NULL) {
+		if ((shm_key = ftok(tok, 1234)) == -1) {
+			return -1;
+		}
+	} else {
+		shm_key = shm_fixkey;  /* Fixed IPC key */
+	}
+
+	if ((shm_id = shmget(shm_key, size, IPC_CREAT|IPC_EXCL|user_mode)) == -1) {
+		if (errno == EEXIST) { /* already exist shm, just get ipc id */
+			shm_id = shmget(shm_key, 0, 0);
+		}
+	}
+	if (shm_id == -1) {
+		strerror_r(errno, buf_err, sizeof(buf_err));
+		fprintf(stderr,"FAIL: shmget():%s [%d]\n", buf_err, __LINE__);
+		return -1;
+	}
+
+	// shmat 인수로 Flag SHM_RND 등이 있음
+	// SHM_RND는 페이지 경계 계산을 반내림으로 자동 처리해준다.
+	if ((*ret = shmat(shm_id, 0, 0)) == (void *)-1) { /* error */
+		strerror_r(errno, buf_err, sizeof(buf_err));
+		fprintf(stderr,"FAIL: shmat():%s [%d]\n", buf_err, __LINE__);
+		return -1;
+	}
+
+	return shm_id;
+}
+
+/* Name : sysv_shmrm
+ * Desc : remove shared memory
+ * Argv : int shm_id or key
+ * Ret  : 0 (if success), -1 (fail)
+ */
+int sysv_shmrm(int shm_id)
+{
+	int		ret;
+	char	buf_err[128];
+	// IPC_STAT, IPC_SET, IPC_INFO 등이 있음
+	if ((ret = shmctl(shm_id, IPC_RMID, NULL)) == -1) {
+		strerror_r(errno, buf_err, sizeof(buf_err));
+		fprintf(stderr,"FAIL: shmctl():%s [%d]\n", buf_err, __LINE__);
+		return -1;
+	}
+	return ret;
+}
+```
+
+---
+### 공유 메모리 시스템 설정
+공유 메모리 관련 시스템의 설정들이 있다.
+
+- kernel.shmmni = 시스템 생성가능 공유 메모리 최대 개수
+- kernel.shmmax = 공유 메모리 1개 최대 크기(bytes)
+- kernel.shmall = 시스템 할당 가능 전체 공유 메모리 페이지 개수
+
+```
+sysctl -a |grep shm // 공유메모리 관련 정보 확인
+```
+몇몇 설정이 더 있었지만, 사라져가는 추세이다.  
+위 코드들을 이용하여 아래와 같이 Make로 라이브러리 생성 가능  
+
+```makefile
+#----------------------------------------------------------------------------
+# Prefix and Output target
+#----------------------------------------------------------------------------
+PREFIX_DIR  = ../../..
+
+OUT		= libsysvipc.a \
+			sysv_shm \
+			sysv_sem sysv_sem_waitforzero \
+			sysv_msg  sysv_msg_regex sysv_msg_info \
+			sysv_sem_counting sysv_sem_graph
+
+include $(PREFIX_DIR)/common_opt.mk
+
+LDLIBS 		+= -lsysvipc
+LOADLIBES 	+= -L$(PREFIX_DIR)/lib
+#----------------------------------------------------------------------------
+# Sources
+#----------------------------------------------------------------------------
+SYSVIPC_FILES = lib_sysv_sem lib_sysv_shm lib_sysv_msg
+
+SYSVIPC_SRC      = $(addsuffix .c,       $(SYSVIPC_FILES))
+SYSVIPC_OBJ      = $(addsuffix .o,       $(SYSVIPC_FILES))
+
+#----------------------------------------------------------------------------
+# Default target.
+#----------------------------------------------------------------------------
+.PHONY: all clean dep
+all: $(OUT)
+
+#----------------------------------------------------------------------------
+# Suffix rules
+#----------------------------------------------------------------------------
+include $(PREFIX_DIR)/common_rule.mk
+
+#----------------------------------------------------------------------------
+# Static pattern rule
+#----------------------------------------------------------------------------
+
+# Library Compilation (Position Independent Code)
+$(SYSVIPC_OBJ): %.o: %.c
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(CPICFLAGS) $< -o $@
+
+#----------------------------------------------------------------------------
+# Build library
+#----------------------------------------------------------------------------
+
+libsysvipc.a : $(SYSVIPC_OBJ)
+	@echo "++ Building XSI(SysV) IPC Wrapper library... ($@)"
+	$(AR) $(ARFLAGS) $@ $(SYSVIPC_OBJ)
+	@ranlib $@
+	@echo "++ install the archive to $(LIB_DIR)"
+	@if [ ! -d $(LIB_DIR) ]; then \
+		mkdir $(LIB_DIR); \
+	fi
+	@mv $@ $(LIB_DIR)
+	@rm $^
+	@echo ""
+
+libsysvipc.so : $(SYSVIPC_OBJ)
+	@echo "++ Building XSI(SysV) IPC Wrapper library... ($@)"
+	$(CC) -shared -o $@ $(SYSVIPC_OBJ)
+	@echo "++ install the shared object to $(LIB_DIR)"
+	@mv $@ $(LIB_DIR)
+	@echo ""
+
+#----------------------------------------------------------------------------
+# Build sample program
+#----------------------------------------------------------------------------
+
+#----------------------------------------------------------------------------
+# others
+#----------------------------------------------------------------------------
+include $(PREFIX_DIR)/common_target.mk
+
+```
 
